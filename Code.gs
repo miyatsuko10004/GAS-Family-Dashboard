@@ -9,9 +9,9 @@
 function doGet(e) {
   initializeAppConfig(); // 全体設定を初期化
 
-  // ここでダッシュボードのHTMLを生成・返却するロジックを実装します
-  // 現状はプレースホルダーとしてシンプルなHTMLを返します
-  return HtmlService.createHtmlOutput('<h1>家庭アプリダッシュボード (開発中)</h1><p>機能は今後追加されます。</p>')
+  // DashboardUI.html ファイルを返すように修正
+  return HtmlService.createTemplateFromFile('DashboardUI')
+      .evaluate()
       .setTitle('家庭アプリダッシュボード')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }

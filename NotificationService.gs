@@ -13,7 +13,7 @@ function sendLineMessage(message) {
   const PUSH_TARGET_ID = getLinePushTargetId();
 
   if (!CHANNEL_ACCESS_TOKEN || !PUSH_TARGET_ID) {
-      Logger.log("エラー: LINE Messaging APIの設定が不足しています。");
+      myLogger("エラー: LINE Messaging APIの設定が不足しています。");
       throw new Error("LINE Messaging APIの設定が不足しています。スクリプトプロパティを確認してください。");
   }
 
@@ -45,13 +45,13 @@ function sendLineMessage(message) {
     const responseBody = response.getContentText();
 
     if (responseCode === 200) {
-      Logger.log("LINEメッセージ送信成功: " + responseBody);
+      myLogger("LINEメッセージ送信成功: " + responseBody);
     } else {
-      Logger.log(`LINEメッセージ送信失敗 (コード: ${responseCode}): ${responseBody}`);
+      myLogger(`LINEメッセージ送信失敗 (コード: ${responseCode}): ${responseBody}`);
       throw new Error(`LINEメッセージ送信失敗: ${responseBody}`);
     }
   } catch (e) {
-    Logger.log("LINEメッセージ送信中にエラーが発生しました: " + e.message);
+    myLogger("LINEメッセージ送信中にエラーが発生しました: " + e.message);
     throw e; // エラーを再スロー
   }
 }

@@ -86,7 +86,7 @@ function menu_getSeasonings() {
  */
 function menu_callGeminiApiForMenu(ingredients, seasonings, settings) {
   initializeAppConfig(); // 設定を初期化
-  const MODEL_NAME = "gemini-pro";
+  const MODEL_NAME = "gemini-1.0-pro";
   const eatingPeople = settings['食べる人数'] || 1; // デフォルト1人
   const numSuggestions = settings['献立提案数'] || 1; // デフォルト1品に設定（複数品はパースが複雑になるため）
   const GEMINI_API_KEY = getGeminiApiKey(); // AppConfigから取得
@@ -128,9 +128,9 @@ function menu_callGeminiApiForMenu(ingredients, seasonings, settings) {
   利用可能な調味料: ${seasonings.join(', ')}
   `;
 
-  Logger.log("Geminiへのプロンプト:\n" + prompt); // デバッグ用
+  myLogger("Geminiへのプロンプト:\n" + prompt); // デバッグ用
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
 
   const options = {
     "method" : "post",
@@ -156,10 +156,10 @@ function menu_callGeminiApiForMenu(ingredients, seasonings, settings) {
     
     if (jsonResponse.candidates && jsonResponse.candidates.length > 0 && jsonResponse.candidates[0].content && jsonResponse.candidates[0].content.parts && jsonResponse.candidates[0].content.parts.length > 0) {
       const geminiOutput = jsonResponse.candidates[0].content.parts[0].text;
-      Logger.log("Geminiからの提案生テキスト:\n" + geminiOutput);
+      myLogger("Geminiからの提案生テキスト:\n" + geminiOutput);
       return geminiOutput;
     } else {
-      Logger.log("Geminiからの応答に有効な内容がありません: " + JSON.stringify(jsonResponse));
+      myLogger("Geminiからの応答に有効な内容がありません: " + JSON.stringify(jsonResponse));
       throw new Error("Geminiから有効な献立提案が得られませんでした。");
     }
   } catch (e) {
@@ -220,7 +220,7 @@ function menu_recordMenuHistory(rawGeminiText, recipeUrl) {
     const ss = getMenuSpreadsheet();
     const sheet = ss.getSheetByName("献立履歴");
     if (!sheet) {
-      Logger.log("エラー: 「献立履歴」シートが見つかりません。履歴は記録されませんでした。");
+      myLogger("エラー: 「献立履歴」シートが見つかりません。履歴は記録されませんでした。");
       return;
     }
 
@@ -236,7 +236,7 @@ function menu_recordMenuHistory(rawGeminiText, recipeUrl) {
       recipeUrl,
       "" // 提案理由（Geminiが返した場合に埋める、現状は空欄）
     ]);
-    Logger.log("献立履歴を記録しました。");
+    myLogger("献立履歴を記録しました。");
   } catch (e) {
     handleError('menu_recordMenuHistory', e);
   }
@@ -307,9 +307,9 @@ function generateAndNotifyShoppingList() {
       const shoppingListText = jsonResponse.candidates[0].content.parts[0].text;
       const lineMessage = `今週の買い物リストです！\n\n` + shoppingListText;
       sendLineMessage(lineMessage); // sendLineNotify から sendLineMessage に変更
-      Logger.log("買い物リストをLINEに通知しました。");
+      myLogger("買い物リストをLINEに通知しました。");
     } else {
-      Logger.log("Geminiから有効な買い物リストが得られませんでした: " + JSON.stringify(jsonResponse));
+      myLogger("Geminiから有効な買い物リストが得られませんでした: " + JSON.stringify(jsonResponse));
       throw new Error("Geminiから有効な買い物リストが得られませんでした。");
     }
 

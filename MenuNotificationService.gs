@@ -86,7 +86,7 @@ function menu_getSeasonings() {
  */
 function menu_callGeminiApiForMenu(ingredients, seasonings, settings) {
   initializeAppConfig(); // 設定を初期化
-  const MODEL_NAME = "gemini-1.0-pro";
+  const MODEL_NAME = "gemini-1.5-flash"; 
   const eatingPeople = settings['食べる人数'] || 1; // デフォルト1人
   const numSuggestions = settings['献立提案数'] || 1; // デフォルト1品に設定（複数品はパースが複雑になるため）
   const GEMINI_API_KEY = getGeminiApiKey(); // AppConfigから取得
@@ -130,7 +130,7 @@ function menu_callGeminiApiForMenu(ingredients, seasonings, settings) {
 
   myLogger("Geminiへのプロンプト:\n" + prompt); // デバッグ用
 
-  const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
 
   const options = {
     "method" : "post",
@@ -292,7 +292,7 @@ function generateAndNotifyShoppingList() {
     これらを考慮して、一般的な家庭で1週間分の献立をまかなうために、他にどんな食材や調味料が必要か、買い物リストを提案してください。
     カテゴリごとにまとめて、簡潔にリストアップしてください。`;
 
-    const MODEL_NAME = "gemini-pro";
+    const MODEL_NAME = "gemini-1.5-flash"; 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
     const options = {
       "method": "post",

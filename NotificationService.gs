@@ -1,30 +1,57 @@
 // NotificationService.gs
-// 通知関連のサービス関数
+// 通知関連のサービス関数 - LINE Messaging API対応版
 
 /**
- * LINE Notifyにメッセージを送信する。
- * @function sendLineNotify
+ * LINE Messaging APIを通じてメッセージを送信する。
+ * @function sendLineMessage
  * @param {string} message - 送信するメッセージ。
  */
-function sendLineNotify(message) {
+function sendLineMessage(message) {
   initializeAppConfig(); // 設定を初期化
-  const LINE_NOTIFY_TOKEN = getLineNotifyToken();
+
+  const CHANNEL_ACCESS_TOKEN = getLineChannelAccessToken();
+  const PUSH_TARGET_ID = getLinePushTargetId();
+
+  if (!CHANNEL_ACCESS_TOKEN || !PUSH_TARGET_ID) {
+      myLogger("エラー: LINE Messaging APIの設定が不足しています。");
+      throw new Error("LINE Messaging APIの設定が不足しています。スクリプトプロパティを確認してください。");
+  }
+
+  const url = "https://api.line.me/v2/bot/message/push";
+  const headers = {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${CHANNEL_ACCESS_TOKEN}`
+  };
+  const payload = JSON.stringify({
+    to: PUSH_TARGET_ID,
+    messages: [
+      {
+        type: "text",
+        text: message
+      }
+    ]
+  });
+
   const options = {
-    "method" : "post",
-    "headers" : {
-      "Authorization" : "Bearer " + LINE_NOTIFY_TOKEN
-    },
-    "payload" : {
-      "message" : message
-    }
+    method: "post",
+    headers: headers,
+    payload: payload,
+    muteHttpExceptions: true // エラー時も例外を投げずにレスポンスを取得
   };
 
   try {
-    UrlFetchApp.fetch("https://notify-api.line.me/api/notify", options);
-    Logger.log("LINEに通知を送信しました。");
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+    const responseBody = response.getContentText();
+
+    if (responseCode === 200) {
+      myLogger("LINEメッセージ送信成功: " + responseBody);
+    } else {
+      myLogger(`LINEメッセージ送信失敗 (コード: ${responseCode}): ${responseBody}`);
+      throw new Error(`LINEメッセージ送信失敗: ${responseBody}`);
+    }
   } catch (e) {
-    // エラーハンドラー自体からエラーを投げると無限ループになる可能性があるので注意
-    Logger.log(`LINE通知の送信に失敗しました（内部エラー）: ${e.message}`);
-    // ここでは handleError を直接呼ばず、ログに記録するに留めるか、より上位で捕捉する
+    myLogger("LINEメッセージ送信中にエラーが発生しました: " + e.message);
+    throw e; // エラーを再スロー
   }
 }

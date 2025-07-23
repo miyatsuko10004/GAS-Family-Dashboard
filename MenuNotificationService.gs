@@ -130,7 +130,7 @@ function menu_callGeminiApiForMenu(ingredients, seasonings, settings) {
 
   myLogger("Geminiへのプロンプト:\n" + prompt); // デバッグ用
 
-  const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
 
   const options = {
     "method" : "post",

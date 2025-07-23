@@ -17,6 +17,7 @@ function menu_getSettings() {
     const data = sheet.getDataRange().getValues();
     const settings = {};
     for (let i = 0; i < data.length; i++) {
+      if (data[i].length < 2 || !data[i][0]) continue; // 不正な行をスキップ
       settings[data[i][0]] = data[i][1];
     }
     return settings;
@@ -85,7 +86,6 @@ function menu_getSeasonings() {
  * @returns {string} Geminiからの提案テキスト。
  */
 function menu_callGeminiApiForMenu(ingredients, seasonings, settings) {
-  console.log(settings);
   initializeAppConfig(); // 設定を初期化
   const MODEL_NAME = "gemini-pro";
   const eatingPeople = settings['食べる人数'] || 1; // デフォルト1人
@@ -204,6 +204,9 @@ function menu_parseGeminiResponse(responseText) {
       result.cookingTime = line.replace('調理時間:', '').trim();
     } else if (line.startsWith('簡単な調理手順:')) {
       result.cookingSteps = line.replace('簡単な調理手順:', '').trim();
+    } else if (result.cookingSteps && !line.includes(':')) {
+      // 前の行が調理手順の場合、継続行として追加
+      result.cookingSteps += ' ' + line;
     }
   }
   return result;
@@ -256,9 +259,15 @@ function suggestAndNotifyMenu() {
     const seasonings = menu_getSeasonings();
 
     const geminiResponseText = menu_callGeminiApiForMenu(ingredients, seasonings, settings);
+    if (!geminiResponseText || geminiResponseText.trim().length === 0) {
+      throw new Error("Geminiから有効な応答が得られませんでした");
+    }
     
     // Geminiからの応答をパースしてLINE通知用のメッセージを作成
     const parsedMenu = menu_parseGeminiResponse(geminiResponseText);
+    if (!parsedMenu.menuName) {
+      throw new Error("メニュー名が解析できませんでした");
+    }
     const recipeUrl = menu_generateRecipeSearchUrl(parsedMenu.menuName);
 
     const lineMessage = `今日の献立提案です！\n\n` +

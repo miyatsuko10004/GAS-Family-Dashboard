@@ -8,7 +8,7 @@
       .header { text-align: center; margin-bottom: 40px; background-color: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
       .header h1 { margin-top: 0; color: #2c3e50; font-size: 2.5em; }
       .header p { color: #7f8c8d; font-size: 1.1em; margin-bottom: 0; }
-      
+
       .app-container { 
         display: grid; 
         grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); 
@@ -31,7 +31,7 @@
         box-shadow: 0 6px 20px rgba(0,0,0,0.12);
       }
       .app-card h2 { margin-top: 0; color: #2980b9; font-size: 1.6em; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px; margin-bottom: 15px;}
-      .app-card p { color: #555; font-size: 0.95em; flex-grow: 1; }
+      .app-card p { color: #666; font-size: 0.95em; flex-grow: 1; }
       .app-card .button-group { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 10px; }
       .app-card button { 
         flex: 1; /* ボタンを均等に配置 */
@@ -209,13 +209,14 @@
       document.addEventListener('DOMContentLoaded', function() {
         loadAppCards(); // ページ読み込み時にアプリカードをロード
 
-        // モーダル関連の要素取得
+        // モーダル関連の要素取得 (グローバルスコープで取得できるよう修正)
         const appModal = document.getElementById('appModal');
         const closeButton = appModal.querySelector('.close-button');
         const appForm = document.getElementById('appForm');
         const saveAppButton = document.getElementById('saveAppButton');
         const deleteAppButton = document.getElementById('deleteAppButton');
         const modalTitle = document.getElementById('modalTitle');
+        const appCardsContainer = document.getElementById('appCards'); // appCardsContainer も取得
 
         // モーダルを閉じる
         closeButton.onclick = function() {
@@ -231,22 +232,6 @@
           }
         }
 
-        // アプリ追加ボタンのイベントリスナー（ダッシュボード上のアプリ管理カード内のボタン）
-        document.querySelector('#appCards .app-card:last-child button:first-child').onclick = function() {
-            modalTitle.textContent = 'アプリを追加';
-            appForm.reset();
-            document.getElementById('appId').value = ''; // IDをクリア
-            deleteAppButton.style.display = 'none'; // 新規追加時は削除ボタン非表示
-            appModal.style.display = 'flex';
-        };
-
-        // アプリ編集ボタンのイベントリスナー（ダッシュボード上のアプリ管理カード内のボタン）
-        document.querySelector('#appCards .app-card:last-child button:last-child').onclick = async function() {
-            // 仮の編集処理。実際には一覧表示から選択されたアプリの情報をモーダルにロード
-            alert('アプリ一覧を表示し、編集するアプリを選択する機能がここに実装されます。');
-        };
-
-
         // フォーム送信処理 (保存/更新)
         appForm.addEventListener('submit', async function(event) {
           event.preventDefault();
@@ -258,33 +243,26 @@
               appData[key] = value;
           }
 
-          let result;
+          // google.script.run の実行結果を直接受け取るのではなく、Promiseとして扱う
+          let operation;
           if (appData.アプリID) { // IDがあれば更新
-              result = await google.script.run
-                  .withSuccessHandler(function(response) {
-                      alert('アプリが更新されました！');
-                      appModal.style.display = 'none';
-                      loadAppCards(); // カードを再ロード
-                  })
-                  .withFailureHandler(function(error) {
-                      alert('アプリの更新に失敗しました: ' + error.message);
-                      console.error('アプリ更新エラー:', error);
-                  })
-                  .app_updateApp(appData);
+              operation = google.script.run.app_updateApp(appData);
           } else { // IDがなければ新規追加
-              result = await google.script.run
-                  .withSuccessHandler(function(response) {
-                      alert('アプリが追加されました！');
-                      appModal.style.display = 'none';
-                      loadAppCards(); // カードを再ロード
-                  })
-                  .withFailureHandler(function(error) {
-                      alert('アプリの追加に失敗しました: ' + error.message);
-                      console.error('アプリ追加エラー:', error);
-                  })
-                  .app_addApp(appData);
+              operation = google.script.run.app_addApp(appData);
           }
-          showLoading(false);
+
+          operation.withSuccessHandler(function(response) {
+              alert('アプリが保存されました！'); // 成功メッセージを統一
+              appModal.style.display = 'none';
+              loadAppCards(); // カードを再ロード
+          })
+          .withFailureHandler(function(error) {
+              alert('アプリの保存に失敗しました: ' + error.message);
+              console.error('アプリ保存エラー:', error);
+          })
+          .finally(function() {
+              showLoading(false);
+          });
         });
 
         // 削除ボタンのイベントリスナー
@@ -302,8 +280,10 @@
                         alert('アプリの削除に失敗しました: ' + error.message);
                         console.error('アプリ削除エラー:', error);
                     })
-                    .app_deleteApp(appId);
-                showLoading(false);
+                    .app_deleteApp(appId)
+                    .finally(function() {
+                        showLoading(false);
+                    });
             }
         };
 
@@ -312,37 +292,60 @@
         async function loadAppCards() {
           showLoading(true);
           try {
+            // app_getAllApps が確実に配列を返すことを前提とする
             const apps = await google.script.run.withFailureHandler(function(error) {
                 alert('アプリ情報の取得に失敗しました: ' + error.message);
                 console.error('アプリ取得エラー:', error);
-            }).app_getAllApps(); // GASサーバーサイド関数を呼び出し
+            }).app_getAllApps(); 
 
-            const appContainer = document.getElementById('appCards');
-            appContainer.innerHTML = ''; // 既存のカードをクリア
+            appCardsContainer.innerHTML = ''; // 既存のカードをクリア
 
-            apps.forEach(app => {
-              const appCard = document.createElement('div');
-              appCard.className = 'app-card';
-              appCard.innerHTML = `
-                <h2>${app['アプリ名']}</h2>
-                <p>${app['説明'] || ''}</p>
-                <div class="button-group">
-                  ${app['ボタン1表示名'] ? `<button onclick="window.open('${app['ボタン1URL']}', '_blank')">${app['ボタン1表示名']}</button>` : ''}
-                  ${app['ボタン2表示名'] ? `<button onclick="window.open('${app['ボタン2URL']}', '_blank')">${app['ボタン2表示名']}</button>` : ''}
-                  <button data-app-id="${app['アプリID']}" class="edit-app-btn" style="background-color: #6c757d;">編集</button>
-                </div>
-              `;
-              appContainer.appendChild(appCard);
-            });
+            // 取得したアプリを元にカードを生成
+            if (apps && apps.length > 0) { // appsがundefinedでないか、空でないか確認
+                apps.forEach(app => {
+                  const appCard = document.createElement('div');
+                  appCard.className = 'app-card';
+                  appCard.innerHTML = `
+                    <h2>${app['アプリ名']}</h2>
+                    <p>${app['説明'] || ''}</p>
+                    <div class="button-group">
+                      ${app['ボタン1表示名'] ? `<button onclick="window.open('${app['ボタン1URL']}', '_blank')">${app['ボタン1表示名']}</button>` : ''}
+                      ${app['ボタン2表示名'] ? `<button onclick="window.open('${app['ボタン2URL']}', '_blank')">${app['ボタン2表示名']}</button>` : ''}
+                      <button data-app-id="${app['アプリID']}" class="edit-app-btn" style="background-color: #6c757d;">編集</button>
+                    </div>
+                  `;
+                  appCardsContainer.appendChild(appCard);
+                });
+            }
 
-            // 編集ボタンにイベントリスナーを追加
+            // アプリ管理カードを生成し、イベントリスナーをここで追加
+            const manageCard = document.createElement('div');
+            manageCard.className = 'app-card';
+            manageCard.innerHTML = `
+              <h2>アプリ管理</h2>
+              <p>ダッシュボードに表示するアプリを追加・編集・削除します。</p>
+              <div class="button-group">
+                <button id="addAppBtn" style="background-color: #28a745;">アプリ追加</button>
+              </div>
+            `;
+            appCardsContainer.appendChild(manageCard); // コンテナに追加
+
+            document.getElementById('addAppBtn').onclick = function() {
+              modalTitle.textContent = 'アプリを追加';
+              appForm.reset();
+              document.getElementById('appId').value = '';
+              deleteAppButton.style.display = 'none';
+              appModal.style.display = 'flex';
+            };
+
+            // 編集ボタンにイベントリスナーを追加 (動的に生成されたボタン)
             document.querySelectorAll('.edit-app-btn').forEach(button => {
               button.onclick = async function() {
                 showLoading(true);
                 const appIdToEdit = this.dataset.appId;
                 const apps = await google.script.run.withFailureHandler(function(error) {
                     alert('アプリ情報の取得に失敗しました: ' + error.message);
-                    console.error('アプリ取得エラー (編集):', error);
+                    console.error('アプリ取得エラー (編集時):', error);
                 }).app_getAllApps();
                 const appToEdit = apps.find(app => app['アプリID'] === appIdToEdit);
 
@@ -364,26 +367,6 @@
                 showLoading(false);
               };
             });
-
-            // 最後にアプリ管理カードを追加
-            const manageCard = document.createElement('div');
-            manageCard.className = 'app-card';
-            manageCard.innerHTML = `
-              <h2>アプリ管理</h2>
-              <p>ダッシュボードに表示するアプリを追加・編集・削除します。</p>
-              <div class="button-group">
-                <button id="addAppBtn" style="background-color: #28a745;">アプリ追加</button>
-              </div>
-            `;
-            appContainer.appendChild(manageCard);
-
-            document.getElementById('addAppBtn').onclick = function() {
-              modalTitle.textContent = 'アプリを追加';
-              appForm.reset();
-              document.getElementById('appId').value = '';
-              deleteAppButton.style.display = 'none';
-              appModal.style.display = 'flex';
-            };
 
 
           } catch (error) {

@@ -8,27 +8,30 @@
 function app_getAllApps() {
   initializeAppConfig();
   try {
-    const ss = getAppConfigSpreadsheet();
-    const sheet = ss.getSheetByName("Apps");
-    if (!sheet) throw new Error("「Apps」シートが見つかりません。");
+    // const ss = getAppConfigSpreadsheet();
+    // const sheet = ss.getSheetByName("Apps");
+    // if (!sheet) throw new Error("「Apps」シートが見つかりません。");
 
-    const data = sheet.getDataRange().getValues();
-    if (data.length < 2) return []; // ヘッダーのみの場合
+    // const data = sheet.getDataRange().getValues();
+    // if (data.length < 2) return []; // ヘッダーのみの場合
 
-    const headers = data[0];
-    const apps = [];
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i];
-      const app = {};
-      for (let j = 0; j < headers.length; j++) {
-        app[headers[j]] = row[j];
-      }
-      apps.push(app);
-    }
-    myLogger(`アプリ情報が ${apps.length} 件取得されました。`);
-    return apps;
+    // const headers = data[0];
+    // const apps = [];
+    // for (let i = 1; i < data.length; i++) {
+    //   const row = data[i];
+    //   const app = {};
+    //   for (let j = 0; j < headers.length; j++) {
+    //     app[headers[j]] = row[j];
+    //   }
+    //   apps.push(app);
+    // }
+    // myLogger(`アプリ情報が ${apps.length} 件取得されました。`);
+    // return apps;
+    myLogger('テスト：シンプルな文字列を返します');
+    return "TEST_SUCCESS_DATA";
   } catch (e) {
     handleError('app_getAllApps', e);
+    return null;
   }
 }
 

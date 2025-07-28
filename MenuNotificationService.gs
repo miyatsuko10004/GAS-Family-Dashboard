@@ -77,28 +77,83 @@ function menu_getSeasonings() {
 }
 
 /**
+ * ★新規追加: 献立履歴シートから指定された日数以内の献立名を取得する。
+ * @param {number} days 遡る日数
+ * @returns {Array<string>} 指定された日数以内に提案された献立名の配列。
+ */
+function menu_getRecentMenuHistory(days) {
+  initializeAppConfig();
+  try {
+    const ss = getMenuSpreadsheet();
+    const sheet = ss.getSheetByName("献立履歴");
+    if (!sheet) {
+      myLogger("警告: 「献立履歴」シートが見つかりません。履歴は考慮されません。");
+      return [];
+    }
+    const data = sheet.getDataRange().getValues();
+    if (data.length < 2) { // ヘッダー行のみの場合
+        return [];
+    }
+
+    const recentMenus = [];
+    const today = new Date();
+    const thresholdDate = new Date();
+    thresholdDate.setDate(today.getDate() - days);
+
+    // ヘッダーをスキップしてループ
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const suggestionDate = new Date(row[0]); // A列: 提案日
+      const menuName = row[1]; // B列: メニュー名
+
+      if (suggestionDate >= thresholdDate && menuName) {
+        recentMenus.push(menuName);
+      }
+    }
+    myLogger(`${days}日以内の履歴: ${recentMenus.join(', ')}`);
+    return recentMenus;
+  } catch (e) {
+    handleError('menu_getRecentMenuHistory', e);
+    return []; // エラーが発生した場合は空の配列を返す
+  }
+}
+
+
+/**
  * Gemini APIに献立提案をリクエストし、結果をパースする。
  * @function menu_callGeminiApiForMenu
  * @param {Array<Object>} ingredients - 利用可能な食材リスト。
  * @param {Array<string>} seasonings - 利用可能な調味料リスト。
  * @param {Object} settings - ユーザー設定。
+ * @param {Array<string>} recentMenus - ★修正: 最近提案されたメニューのリスト。
  * @returns {string} Geminiからの提案テキスト。
  */
-function menu_callGeminiApiForMenu(ingredients, seasonings, settings) {
+function menu_callGeminiApiForMenu(ingredients, seasonings, settings, recentMenus) { // ★修正: recentMenus を引数に追加
   initializeAppConfig(); // 設定を初期化
   const MODEL_NAME = "gemini-1.5-flash"; 
   const eatingPeople = settings['食べる人数'] || 1; // デフォルト1人
-  const numSuggestions = settings['献立提案数'] || 1; // デフォルト1品に設定（複数品はパースが複雑になるため）
-  const GEMINI_API_KEY = getGeminiApiKey(); // AppConfigから取得
+  const numSuggestions = settings['献立提案数'] || 1; // デフォルト1品に設定
+  const GEMINI_API_KEY = getGeminiApiKey();
+
+  // ★修正: 食材リストをシャッフルして、優先順位の影響をランダム化する
+  for (let i = ingredients.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [ingredients[i], ingredients[j]] = [ingredients[j], ingredients[i]];
+  }
 
   const availableIngredientsList = ingredients.map(i => {
     let desc = i['食材名'];
     if (i['数量']) desc += `(${i['数量']})`;
-    if (i['消費期限'] && typeof i['消費期限'].getMonth === 'function') { // 日付型であることを確認
+    if (i['消費期限'] && typeof i['消費期限'].getMonth === 'function') {
       const today = new Date();
-      const diffTime = Math.abs(i['消費期限'].getTime() - today.getTime());
+      // ★修正: 期限切れと期限間近の計算をより正確に
+      const diffTime = i['消費期限'].getTime() - today.getTime();
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      if (diffDays <= 3) desc += `(期限${diffDays}日以内)`;
+      if (diffDays <= 3 && diffDays >= 0) {
+        desc += `(期限${diffDays}日以内)`;
+      } else if (diffDays < 0) {
+        desc += `(期限切れ)`;
+      }
     }
     return desc;
   }).join(', ');
@@ -111,11 +166,16 @@ function menu_callGeminiApiForMenu(ingredients, seasonings, settings) {
   let prompt = `あなたは料理の専門家です。以下の食材と調味料を使って、${eatingPeople}人前の、簡単に作れる夜ご飯のメニューを${numSuggestions}つ提案してください。`;
 
   if (priorityIngredients) {
-    prompt += `\n特に、以下の食材を優先的に消費できるような献立を提案してください: ${priorityIngredients}.`;
+    prompt += `\n特に、以下の食材を優先的に消費できるような献立を提案してください: ${priorityIngredients}。`;
+  }
+
+  // ★修正: 履歴にあるメニューを避けるように指示を追加
+  if (recentMenus && recentMenus.length > 0) {
+    prompt += `\n\n以下のメニューは過去2週間で提案済みのため、これらとは異なる新しいメニューを提案してください: ${recentMenus.join(', ')}`;
   }
 
   prompt += `
-  辛いもの、ネギ、ニンニクは**絶対に使用しないでください**。これらの食材を含む献立は提案しないでください。
+  辛いもの、ネギ、たまねぎ、ニンニクは**絶対に使用しないでください**。これらの食材を含む献立は提案しないでください。
 
   各メニューについて、以下の形式で簡潔に回答してください。箇条書きは使わず、各項目を改行で区切ってください。
 
@@ -128,26 +188,13 @@ function menu_callGeminiApiForMenu(ingredients, seasonings, settings) {
   利用可能な調味料: ${seasonings.join(', ')}
   `;
 
-  myLogger("Geminiへのプロンプト:\n" + prompt); // デバッグ用
+  myLogger("Geminiへのプロンプト:\n" + prompt);
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
-
   const options = {
     "method" : "post",
-    "headers" : {
-      "Content-Type" : "application/json"
-    },
-    "payload" : JSON.stringify({
-      "contents": [
-        {
-          "parts": [
-            {
-              "text": prompt
-            }
-          ]
-        }
-      ]
-    })
+    "headers" : { "Content-Type" : "application/json" },
+    "payload" : JSON.stringify({ "contents": [{ "parts": [{ "text": prompt }] }] })
   };
 
   try {
@@ -179,7 +226,6 @@ function menu_generateRecipeSearchUrl(menuName) {
 
 /**
  * Geminiの応答テキストをパースしてオブジェクトに変換するヘルパー関数。
- * Geminiの応答形式に依存するため、変更があった場合は要修正。
  * @function menu_parseGeminiResponse
  * @param {string} responseText - Geminiからの生の応答テキスト。
  * @returns {Object} パースされた献立情報。
@@ -215,7 +261,7 @@ function menu_parseGeminiResponse(responseText) {
  * @param {string} recipeUrl - 生成されたレシピURL。
  */
 function menu_recordMenuHistory(rawGeminiText, recipeUrl) {
-  initializeAppConfig(); // 設定を初期化
+  initializeAppConfig();
   try {
     const ss = getMenuSpreadsheet();
     const sheet = ss.getSheetByName("献立履歴");
@@ -225,7 +271,7 @@ function menu_recordMenuHistory(rawGeminiText, recipeUrl) {
     }
 
     const today = new Date();
-    const parsed = menu_parseGeminiResponse(rawGeminiText); // Geminiの応答をパース
+    const parsed = menu_parseGeminiResponse(rawGeminiText);
 
     sheet.appendRow([
       today,
@@ -234,7 +280,7 @@ function menu_recordMenuHistory(rawGeminiText, recipeUrl) {
       parsed.cookingTime,
       parsed.cookingSteps,
       recipeUrl,
-      "" // 提案理由（Geminiが返した場合に埋める、現状は空欄）
+      ""
     ]);
     myLogger("献立履歴を記録しました。");
   } catch (e) {
@@ -247,31 +293,33 @@ function menu_recordMenuHistory(rawGeminiText, recipeUrl) {
  * @function suggestAndNotifyMenu
  */
 function suggestAndNotifyMenu() {
-  initializeAppConfig(); // 設定を初期化
+  initializeAppConfig();
 
   try {
     const settings = menu_getSettings();
     const ingredients = menu_getIngredients();
     const seasonings = menu_getSeasonings();
+    // ★修正: 過去14日間の履歴を取得
+    const recentMenus = menu_getRecentMenuHistory(14); 
 
-    const geminiResponseText = menu_callGeminiApiForMenu(ingredients, seasonings, settings);
+    // ★修正: 履歴を渡してGeminiに問い合わせ
+    const geminiResponseText = menu_callGeminiApiForMenu(ingredients, seasonings, settings, recentMenus);
     
-    // Geminiからの応答をパースしてLINE通知用のメッセージを作成
     const parsedMenu = menu_parseGeminiResponse(geminiResponseText);
     const recipeUrl = menu_generateRecipeSearchUrl(parsedMenu.menuName);
 
     const lineMessage = `今日の献立提案です！\n\n` +
-                        `メニュー名: ${parsedMenu.menuName}\n` +
-                        `主要食材: ${parsedMenu.mainIngredients}\n` +
-                        `調理時間: ${parsedMenu.cookingTime}\n` +
-                        `簡単な調理手順: ${parsedMenu.cookingSteps}\n\n` +
-                        `レシピを検索: ${recipeUrl}`;
+                      `メニュー名: ${parsedMenu.menuName}\n` +
+                      `主要食材: ${parsedMenu.mainIngredients}\n` +
+                      `調理時間: ${parsedMenu.cookingTime}\n` +
+                      `簡単な調理手順: ${parsedMenu.cookingSteps}\n\n` +
+                      `レシピを検索: ${recipeUrl}`;
     
-    sendLineMessage(lineMessage); // sendLineNotify から sendLineMessage に変更
-    menu_recordMenuHistory(geminiResponseText, recipeUrl); // Geminiからの生テキストとURLを記録
+    sendLineMessage(lineMessage);
+    menu_recordMenuHistory(geminiResponseText, recipeUrl);
 
   } catch (e) {
-    handleError('suggestAndNotifyMenu', e, true); // エラー発生時もLINEに通知
+    handleError('suggestAndNotifyMenu', e, true);
   }
 }
 
@@ -280,14 +328,13 @@ function suggestAndNotifyMenu() {
  * @function generateAndNotifyShoppingList
  */
 function generateAndNotifyShoppingList() {
-  initializeAppConfig(); // 設定を初期化
+  initializeAppConfig();
 
   try {
     const settings = menu_getSettings();
-    const ingredients = menu_getIngredients(); // 現在の在庫
-    const GEMINI_API_KEY = getGeminiApiKey(); // AppConfigから取得
+    const ingredients = menu_getIngredients();
+    const GEMINI_API_KEY = getGeminiApiKey();
 
-    // Geminiに買い物リスト生成を依頼するプロンプト
     const prompt = `あなたは買い物リスト作成の専門家です。以下の食材が冷蔵庫にあります。\n${ingredients.map(i => i['食材名']).join(', ')}\n
     これらを考慮して、一般的な家庭で1週間分の献立をまかなうために、他にどんな食材や調味料が必要か、買い物リストを提案してください。
     カテゴリごとにまとめて、簡潔にリストアップしてください。`;
@@ -306,7 +353,7 @@ function generateAndNotifyShoppingList() {
     if (jsonResponse.candidates && jsonResponse.candidates.length > 0 && jsonResponse.candidates[0].content && jsonResponse.candidates[0].content.parts && jsonResponse.candidates[0].content.parts.length > 0) {
       const shoppingListText = jsonResponse.candidates[0].content.parts[0].text;
       const lineMessage = `今週の買い物リストです！\n\n` + shoppingListText;
-      sendLineMessage(lineMessage); // sendLineNotify から sendLineMessage に変更
+      sendLineMessage(lineMessage);
       myLogger("買い物リストをLINEに通知しました。");
     } else {
       myLogger("Geminiから有効な買い物リストが得られませんでした: " + JSON.stringify(jsonResponse));
@@ -314,6 +361,6 @@ function generateAndNotifyShoppingList() {
     }
 
   } catch (e) {
-    handleError('generateAndNotifyShoppingList', e, true); // エラー発生時もLINEに通知
+    handleError('generateAndNotifyShoppingList', e, true);
   }
 }
